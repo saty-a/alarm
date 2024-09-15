@@ -52,4 +52,6 @@ class ExampleAlarmTile extends StatelessWidget {
       ),
     );
   }
+  // wait for 11:46 to ring the alarm
+  // Is it going to work on background
 }
