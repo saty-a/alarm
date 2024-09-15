@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:alarm/alarm.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +37,7 @@ class _ExampleAlarmHomeShortcutButtonState
       volume: volume,
       notificationSettings: NotificationSettings(
           title: 'Alarm example',
-          body: 'Shortcut button alarm with delay of $delayInHours hours'),
+          body: 'Shortcut button alarm with delay of $delayInHours hours',),
     );
 
     await Alarm.set(alarmSettings: alarmSettings);
