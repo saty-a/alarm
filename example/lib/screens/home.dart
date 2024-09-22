@@ -4,9 +4,12 @@ import 'package:alarm/alarm.dart';
 import 'package:alarm_example/screens/edit_alarm.dart';
 import 'package:alarm_example/screens/ring.dart';
 import 'package:alarm_example/screens/shortcut_button.dart';
+import 'package:alarm_example/services/permission.dart';
 import 'package:alarm_example/widgets/tile.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+const version = '4.0.0-dev.4';
 
 class ExampleAlarmHomeScreen extends StatefulWidget {
   const ExampleAlarmHomeScreen({super.key});
@@ -18,17 +21,21 @@ class ExampleAlarmHomeScreen extends StatefulWidget {
 class _ExampleAlarmHomeScreenState extends State<ExampleAlarmHomeScreen> {
   late List<AlarmSettings> alarms;
 
-  static StreamSubscription<AlarmSettings>? subscription;
+  static StreamSubscription<AlarmSettings>? ringSubscription;
+  static StreamSubscription<int>? updateSubscription;
 
   @override
   void initState() {
     super.initState();
+    AlarmPermissions.checkNotificationPermission();
     if (Alarm.android) {
-      checkAndroidNotificationPermission();
-      checkAndroidScheduleExactAlarmPermission();
+      AlarmPermissions.checkAndroidScheduleExactAlarmPermission();
     }
     loadAlarms();
-    subscription ??= Alarm.ringStream.stream.listen(navigateToRingScreen);
+    ringSubscription ??= Alarm.ringStream.stream.listen(navigateToRingScreen);
+    updateSubscription ??= Alarm.updateStream.stream.listen((_) {
+      loadAlarms();
+    });
   }
 
   void loadAlarms() {
@@ -67,50 +74,30 @@ class _ExampleAlarmHomeScreenState extends State<ExampleAlarmHomeScreen> {
     if (res != null && res == true) loadAlarms();
   }
 
-  Future<void> checkAndroidNotificationPermission() async {
-    final status = await Permission.notification.status;
-    if (status.isDenied) {
-      alarmPrint('Requesting notification permission...');
-      final res = await Permission.notification.request();
-      alarmPrint(
-        'Notification permission ${res.isGranted ? '' : 'not '}granted',
-      );
-    }
-  }
-
-  Future<void> checkAndroidExternalStoragePermission() async {
-    final status = await Permission.storage.status;
-    if (status.isDenied) {
-      alarmPrint('Requesting external storage permission...');
-      final res = await Permission.storage.request();
-      alarmPrint(
-        'External storage permission ${res.isGranted ? '' : 'not'} granted',
-      );
-    }
-  }
-
-  Future<void> checkAndroidScheduleExactAlarmPermission() async {
-    final status = await Permission.scheduleExactAlarm.status;
-    alarmPrint('Schedule exact alarm permission: $status.');
-    if (status.isDenied) {
-      alarmPrint('Requesting schedule exact alarm permission...');
-      final res = await Permission.scheduleExactAlarm.request();
-      alarmPrint(
-        'Schedule exact alarm permission ${res.isGranted ? '' : 'not'} granted',
-      );
-    }
+  Future<void> launchReadmeUrl() async {
+    final url = Uri.parse('https://pub.dev/packages/alarm/versions/$version');
+    await launchUrl(url);
   }
 
   @override
   void dispose() {
-    subscription?.cancel();
+    ringSubscription?.cancel();
+    updateSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('alarm 3.1.5')),
+      appBar: AppBar(
+        title: const Text('alarm $version'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.menu_book_rounded),
+            onPressed: launchReadmeUrl,
+          ),
+        ],
+      ),
       body: SafeArea(
         child: alarms.isNotEmpty
             ? ListView.separated(

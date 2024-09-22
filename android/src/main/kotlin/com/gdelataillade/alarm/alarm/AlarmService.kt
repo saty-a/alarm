@@ -1,8 +1,10 @@
 package com.gdelataillade.alarm.alarm
 
 import com.gdelataillade.alarm.services.AudioService
+import com.gdelataillade.alarm.services.AlarmStorage
 import com.gdelataillade.alarm.services.VibrationService
 import com.gdelataillade.alarm.services.VolumeService
+import com.gdelataillade.alarm.models.NotificationSettings
 
 import android.app.Service
 import android.app.PendingIntent
@@ -16,6 +18,7 @@ import android.os.Build
 import io.flutter.Log
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.embedding.engine.FlutterEngine
+import org.json.JSONObject
 
 class AlarmService : Service() {
     private var audioService: AudioService? = null
@@ -42,10 +45,18 @@ class AlarmService : Service() {
             return START_NOT_STICKY
         }
 
-        val action = intent.action
         val id = intent.getIntExtra("id", 0)
+        val action = intent.getStringExtra(AlarmReceiver.EXTRA_ALARM_ACTION)
+
+        Log.d("AlarmService", "ringing alarms: $ringingAlarmIds")
+        if (ringingAlarmIds.isNotEmpty()) {
+            Log.d("AlarmService", "An alarm is already ringing. Ignoring new alarm with id: $id")
+            unsaveAlarm(id)
+            return START_NOT_STICKY
+        }
+
         if (action == "STOP_ALARM" && id != 0) {
-            stopAlarm(id)
+            unsaveAlarm(id)
             return START_NOT_STICKY
         }
 
@@ -54,15 +65,21 @@ class AlarmService : Service() {
         val vibrate = intent.getBooleanExtra("vibrate", true)
         val volume = intent.getDoubleExtra("volume", -1.0)
         val fadeDuration = intent.getDoubleExtra("fadeDuration", 0.0)
-        val notificationTitle = intent.getStringExtra("notificationTitle") ?: "Default Title" // Default if null
-        val notificationBody = intent.getStringExtra("notificationBody") ?: "Default Body" // Default if null
         val fullScreenIntent = intent.getBooleanExtra("fullScreenIntent", true)
+
+        val notificationSettingsJson = intent.getStringExtra("notificationSettings")
+        val jsonObject = JSONObject(notificationSettingsJson)
+        val map: MutableMap<String, Any> = mutableMapOf()
+        jsonObject.keys().forEach { key ->
+            map[key] = jsonObject.get(key)
+        }
+        val notificationSettings = NotificationSettings.fromJson(map)
 
         // Handling notification
         val notificationHandler = NotificationHandler(this)
         val appIntent = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
         val pendingIntent = PendingIntent.getActivity(this, id, appIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notification = notificationHandler.buildNotification(notificationTitle, notificationBody, fullScreenIntent, pendingIntent)
+        val notification = notificationHandler.buildNotification(notificationSettings, fullScreenIntent, pendingIntent, id)
 
         // Starting foreground service safely
         try {
@@ -79,7 +96,10 @@ class AlarmService : Service() {
             return START_NOT_STICKY // Return on security exception
         }
 
-        AlarmPlugin.eventSink?.success(mapOf("id" to id))
+        AlarmPlugin.eventSink?.success(mapOf(
+            "id" to id,
+            "method" to "ring"
+        ))
 
         if (volume >= 0.0 && volume <= 1.0) {
             volumeService?.setVolume(volume, showSystemUI)
@@ -109,6 +129,15 @@ class AlarmService : Service() {
         wakeLock.acquire(5 * 60 * 1000L) // 5 minutes
 
         return START_STICKY
+    }
+
+    fun unsaveAlarm(id: Int) {
+        AlarmStorage(this).unsaveAlarm(id)
+        AlarmPlugin.eventSink?.success(mapOf(
+            "id" to id,
+            "method" to "stop"
+        ))
+        stopAlarm(id)
     }
 
     fun stopAlarm(id: Int) {

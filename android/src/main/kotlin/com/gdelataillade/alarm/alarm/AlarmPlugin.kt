@@ -1,15 +1,20 @@
 package com.gdelataillade.alarm.alarm
 
 import com.gdelataillade.alarm.services.NotificationOnKillService
+import com.gdelataillade.alarm.services.AlarmStorage
+import com.gdelataillade.alarm.models.AlarmSettings
 
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import androidx.annotation.NonNull
+import java.util.Date
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -17,11 +22,17 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.Log
+import org.json.JSONObject
 
 class AlarmPlugin: FlutterPlugin, MethodCallHandler {
     private lateinit var context: Context
-    private lateinit var methodChannel : MethodChannel
+    private lateinit var methodChannel: MethodChannel
     private lateinit var eventChannel: EventChannel
+
+    private val alarmIds: MutableList<Int> = mutableListOf()
+    private var notifOnKillEnabled: Boolean = false
+    private var notificationOnKillTitle: String = "Your alarms may not ring"
+    private var notificationOnKillBody: String = "You killed the app. Please reopen so your alarms can be rescheduled."
 
     companion object {
         @JvmStatic
@@ -49,18 +60,7 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
         when (call.method) {
             "setAlarm" -> {
-                val id = call.argument<Int>("id")!!
-                val delayInSeconds = call.argument<Int>("delayInSeconds")!!
-
-                val alarmIntent = createAlarmIntent(context, call, id)
-
-                if (delayInSeconds <= 5) {
-                    handleImmediateAlarm(context, alarmIntent, delayInSeconds)
-                } else {
-                    handleDelayedAlarm(context, alarmIntent, delayInSeconds, id)
-                }
-
-                result.success(true)
+                setAlarm(call, result)
             }
             "stopAlarm" -> {
                 val id = call.argument<Int>("id")
@@ -69,29 +69,7 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
                     return
                 }
 
-                // Check if the alarm is currently ringing
-                if (AlarmService.ringingAlarmIds.contains(id)) {
-                    // If the alarm is ringing, stop the alarm service for this ID
-                    val stopIntent = Intent(context, AlarmService::class.java)
-                    stopIntent.action = "STOP_ALARM"
-                    stopIntent.putExtra("id", id)
-                    context.stopService(stopIntent)
-                }
-
-                // Intent to cancel the future alarm if it's set
-                val alarmIntent = Intent(context, AlarmReceiver::class.java)
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context, 
-                    id, 
-                    alarmIntent, 
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-
-                // Cancel the future alarm using AlarmManager
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                alarmManager.cancel(pendingIntent)
-
-                result.success(true)
+                stopAlarm(id, result)
             }
             "isRinging" -> {
                 val id = call.argument<Int>("id")
@@ -99,26 +77,76 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
                 val isRinging = ringingAlarmIds.contains(id)
                 result.success(isRinging)
             }
-            "setNotificationOnKillService" -> {
-                val title = call.argument<String>("title")
-                val body = call.argument<String>("body")
-
-                val serviceIntent = Intent(context, NotificationOnKillService::class.java)
-                serviceIntent.putExtra("title", title)
-                serviceIntent.putExtra("body", body)
-
-                context.startService(serviceIntent)
-
+            "setWarningNotificationOnKill" -> {
+                if (call.argument<String>("title") != null && call.argument<String>("body") != null) {
+                    notificationOnKillTitle = call.argument<String>("title")!!
+                    notificationOnKillBody = call.argument<String>("body")!!
+                }
                 result.success(true)
             }
-            "stopNotificationOnKillService" -> {
-                val serviceIntent = Intent(context, NotificationOnKillService::class.java)
-                context.stopService(serviceIntent)
+            "disableWarningNotificationOnKill" -> {
+                disableWarningNotificationOnKill(context)
                 result.success(true)
             }
             else -> {
                 result.notImplemented()
             }
+        }
+    }
+
+    fun setAlarm(call: MethodCall, result: Result, customContext: Context? = null) {
+        val alarmJsonMap = call.arguments as? Map<String, Any>
+        val contextToUse = customContext ?: context
+
+        if (alarmJsonMap != null) {
+            val alarm = AlarmSettings.fromJson(alarmJsonMap)
+            if (alarm != null) {
+                val alarmIntent = createAlarmIntent(contextToUse, call, alarm.id)
+                val delayInSeconds = (alarm.dateTime.time - System.currentTimeMillis()) / 1000
+
+                if (delayInSeconds <= 5) {
+                    handleImmediateAlarm(contextToUse, alarmIntent, delayInSeconds.toInt())
+                } else {
+                    handleDelayedAlarm(contextToUse, alarmIntent, delayInSeconds.toInt(), alarm.id, alarm.warningNotificationOnKill)
+                }
+                alarmIds.add(alarm.id)
+                result.success(true)
+            } else {
+                result.error("INVALID_ALARM", "Failed to parse alarm JSON", null)
+            }
+        } else {
+            result.error("INVALID_ARGUMENTS", "Invalid arguments provided for setAlarm", null)
+        }
+    }
+
+    fun stopAlarm(id: Int, result: Result? = null) {
+        if (AlarmService.ringingAlarmIds.contains(id)) {
+            val stopIntent = Intent(context, AlarmService::class.java)
+            stopIntent.action = "STOP_ALARM"
+            stopIntent.putExtra("id", id)
+            context.stopService(stopIntent)
+        }
+
+        // Intent to cancel the future alarm if it's set
+        val alarmIntent = Intent(context, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context, 
+            id, 
+            alarmIntent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Cancel the future alarm using AlarmManager
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmManager.cancel(pendingIntent)
+
+        alarmIds.remove(id)
+        if (alarmIds.isEmpty() && notifOnKillEnabled) {
+            disableWarningNotificationOnKill(context)
+        }
+
+        if (result != null) {
+            result.success(true)
         }
     }
 
@@ -135,9 +163,11 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
         intent.putExtra("vibrate", call.argument<Boolean>("vibrate"))
         intent.putExtra("volume", call.argument<Boolean>("volume"))
         intent.putExtra("fadeDuration", call.argument<Double>("fadeDuration"))
-        intent.putExtra("notificationTitle", call.argument<String>("notificationTitle"))
-        intent.putExtra("notificationBody", call.argument<String>("notificationBody"))
         intent.putExtra("fullScreenIntent", call.argument<Boolean>("fullScreenIntent"))
+
+        val notificationSettingsMap = call.argument<Map<String, Any>>("notificationSettings")
+        val notificationSettingsJson = JSONObject(notificationSettingsMap ?: emptyMap<String, Any>()).toString()
+        intent.putExtra("notificationSettings", notificationSettingsJson)
     }
 
     fun handleImmediateAlarm(context: Context, intent: Intent, delayInSeconds: Int) {
@@ -147,7 +177,7 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
         }, delayInSeconds * 1000L)
     }
 
-    fun handleDelayedAlarm(context: Context, intent: Intent, delayInSeconds: Int, id: Int) {
+    fun handleDelayedAlarm(context: Context, intent: Intent, delayInSeconds: Int, id: Int, warningNotificationOnKill: Boolean) {
         try {
             val triggerTime = System.currentTimeMillis() + delayInSeconds * 1000L
             val pendingIntent = PendingIntent.getBroadcast(
@@ -167,6 +197,10 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
             } else {
                 alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             }
+
+            if (warningNotificationOnKill && !notifOnKillEnabled) {
+                setWarningNotificationOnKill(context)
+            }
         } catch (e: ClassCastException) {
             Log.e("AlarmPlugin", "AlarmManager service type casting failed", e)
         } catch (e: IllegalStateException) {
@@ -174,6 +208,21 @@ class AlarmPlugin: FlutterPlugin, MethodCallHandler {
         } catch (e: Exception) {
             Log.e("AlarmPlugin", "Error in handling delayed alarm", e)
         }
+    }
+
+    fun setWarningNotificationOnKill(context: Context) {
+        val serviceIntent = Intent(context, NotificationOnKillService::class.java)
+        serviceIntent.putExtra("title", notificationOnKillTitle)
+        serviceIntent.putExtra("body", notificationOnKillBody)
+
+        context.startService(serviceIntent)
+        notifOnKillEnabled = true
+    }
+
+    fun disableWarningNotificationOnKill(context: Context) {
+        val serviceIntent = Intent(context, NotificationOnKillService::class.java)
+        context.stopService(serviceIntent)
+        notifOnKillEnabled = false
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {

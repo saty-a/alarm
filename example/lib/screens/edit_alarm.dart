@@ -89,15 +89,20 @@ class _ExampleAlarmEditScreenState extends State<ExampleAlarmEditScreen> {
         : widget.alarmSettings!.id;
 
     final alarmSettings = AlarmSettings(
-        id: id,
-        dateTime: selectedDateTime,
-        loopAudio: loopAudio,
-        vibrate: vibrate,
-        volume: volume,
-        assetAudioPath: assetAudio,
-        notificationSettings: NotificationSettings(
-            title: 'Alarm example', body: 'Your alarm ($id) is ringing'),
-        warningNotificationOnKill: true);
+      id: id,
+      dateTime: selectedDateTime,
+      loopAudio: loopAudio,
+      vibrate: vibrate,
+      volume: volume,
+      assetAudioPath: assetAudio,
+      warningNotificationOnKill: Platform.isIOS,
+      notificationSettings: NotificationSettings(
+        title: 'Alarm example',
+        body: 'Your alarm ($id) is ringing',
+        stopButton: 'Stop the alarm',
+        icon: 'notification_icon',
+      ),
+    );
     return alarmSettings;
   }
 
@@ -105,14 +110,14 @@ class _ExampleAlarmEditScreenState extends State<ExampleAlarmEditScreen> {
     if (loading) return;
     setState(() => loading = true);
     Alarm.set(alarmSettings: buildAlarmSettings()).then((res) {
-      if (res) Navigator.pop(context, true);
+      if (res && mounted) Navigator.pop(context, true);
       setState(() => loading = false);
     });
   }
 
   void deleteAlarm() {
     Alarm.stop(widget.alarmSettings!.id).then((res) {
-      if (res) Navigator.pop(context, true);
+      if (res && mounted) Navigator.pop(context, true);
     });
   }
 

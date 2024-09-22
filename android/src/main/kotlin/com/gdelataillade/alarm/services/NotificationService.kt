@@ -1,15 +1,13 @@
 package com.gdelataillade.alarm.alarm
 
+import com.gdelataillade.alarm.models.NotificationSettings
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.os.Build
-import android.net.Uri
-import android.media.AudioAttributes
 import androidx.core.app.NotificationCompat
 
 class NotificationHandler(private val context: Context) {
@@ -22,7 +20,7 @@ class NotificationHandler(private val context: Context) {
         createNotificationChannel()
     }
 
-   private fun createNotificationChannel() {
+    private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -37,40 +35,52 @@ class NotificationHandler(private val context: Context) {
         }
     }
 
-    fun buildNotification(title: String, body: String, fullScreen: Boolean, pendingIntent: PendingIntent): Notification {
-        val appIconResId = context.packageManager.getApplicationInfo(context.packageName, 0).icon
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()
-        val notificationPendingIntent = PendingIntent.getActivity(
-            context, 
+    fun buildNotification(
+        notificationSettings: NotificationSettings,
+        fullScreen: Boolean,
+        pendingIntent: PendingIntent,
+        alarmId: Int
+    ): Notification {
+        val defaultIconResId = context.packageManager.getApplicationInfo(context.packageName, 0).icon
+
+        val iconResId = if (notificationSettings.icon != null) {
+            val resId = context.resources.getIdentifier(notificationSettings.icon, "drawable", context.packageName)
+            if (resId != 0) resId else defaultIconResId
+        } else {
+            defaultIconResId
+        }
+
+        val stopIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = AlarmReceiver.ACTION_ALARM_STOP
+            putExtra("id", alarmId)
+        }
+        val stopPendingIntent = PendingIntent.getBroadcast(
+            context,
             0,
-            intent, 
+            stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notificationBuilder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(context, CHANNEL_ID) // For API 26 and above
-        } else {
-            Notification.Builder(context) // For lower API levels
-        }
-
-        notificationBuilder
-            .setSmallIcon(appIconResId)
-            .setContentTitle(title)
-            .setContentText(body)
+        val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(iconResId)
+            .setContentTitle(notificationSettings.title)
+            .setContentText(notificationSettings.body)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
             .setOngoing(true)
-            .setContentIntent(notificationPendingIntent)
+            .setContentIntent(pendingIntent)
             .setSound(null)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            notificationBuilder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        if (fullScreen) {
+            notificationBuilder.setFullScreenIntent(pendingIntent, true)
         }
 
-        if (fullScreen) {
-            notificationBuilder.setFullScreenIntent(notificationPendingIntent, true)
+        notificationSettings.let {
+            if (it.stopButton != null) {
+                notificationBuilder.addAction(0, it.stopButton, stopPendingIntent)
+            }
         }
 
         return notificationBuilder.build()

@@ -42,9 +42,13 @@ final alarmSettings = AlarmSettings(
   vibrate: true,
   volume: 0.8,
   fadeDuration: 3.0,
-  notificationTitle: 'This is the title',
-  notificationBody: 'This is the body',
-  enableNotificationOnKill: Platform.isIOS,
+  warningNotificationOnKill: Platform.isIOS,
+  notificationActionSettings: const NotificationActionSettings(
+    title: 'This is the title',
+    body: 'This is the body',
+    stopButton: true,
+    icon: 'notification_icon',
+  ),
 );
 ```
 
@@ -58,20 +62,18 @@ Property |   Type     | Description
 id |   `int`     | Unique identifier of the alarm.
 alarmDateTime |   `DateTime`     | The date and time you want your alarm to ring.
 assetAudio |   `String`     | The path to you audio asset you want to use as ringtone. Can be a path in your assets folder or a local file path with android permission.
+notificationSettings | `NotificationSettings` | Settings for notification title, body, icon and action buttons (only stop at the moment).
 loopAudio |   `bool`     | If true, audio will repeat indefinitely until alarm is stopped.
 vibrate |   `bool`     | If true, device will vibrate indefinitely until alarm is stopped. If [loopAudio] is set to false, vibrations will stop when audio ends.
 volume |   `double`     | Sets system volume level (0.0 to 1.0) at [dateTime]; reverts on alarm stop. Defaults to current volume if null.
 fadeDuration |   `double`     | Duration, in seconds, over which to fade the alarm volume. Set to 0.0 by default, which means no fade.
-notificationTitle |   `String`     | The title of the notification triggered when alarm rings.
-notificationBody | `String` | The body of the notification.
-enableNotificationOnKill |   `bool`     | Whether to show a notification when application is killed to warn the user that the alarm he set may not ring. Enabled by default.
+warningNotificationOnKill |   `bool`     | Whether to show a notification when application is killed to warn the user that the alarm he set may not ring. Recommanded for iOS. Enabled by default.
 androidFullScreenIntent |   `bool`     | Whether to turn screen on when android alarm notification is triggered. Enabled by default.
 
-Note that if `notificationTitle` and `notificationBody` are both empty, iOS will not show the notification and Android will show an empty notification.
 
-If you enabled `enableNotificationOnKill`, you can choose your own notification title and body by using this method before setting your alarms:
+If you enabled `warningNotificationOnKill`, you can choose your own notification title and body by using this method before setting your alarms:
 ```Dart
-await Alarm.setNotificationOnAppKillContent(title, body)
+await Alarm.setWarningNotificationOnKill(title, body)
 ```
 
 This is how to stop/cancel your alarm:
@@ -83,6 +85,7 @@ This is how to run some code when alarm starts ringing. I implemented it as a st
 ```Dart
 Alarm.ringStream.stream.listen((_) => yourOnRingCallback());
 ```
+You can also listen to the `Alarm.updateStream` to know when an alarm is added, updated, or stopped.
 
 To avoid unexpected behaviors, if you set an alarm for the same time, down to the second, as an existing one, the new alarm will replace the existing one.
 
@@ -181,7 +184,6 @@ We welcome contributions to this plugin! If you would like to make a change or a
 
 These are some features that I have in mind that could be useful:
 - [Android] Reschedule alarms after device reboot.
-- Notification actions: stop and snooze.
 - Use `ffigen` and `jnigen` binding generators to call native code more efficiently instead of using method channels.
 - Stop alarm sound when notification is dismissed.
 

@@ -1,3 +1,31 @@
+## 4.0.0-dev.5
+**💥 Breaking Changes**
+* [iOS] Removed notification permission request. Must be handled in-app to match Android behaviour.
+
+## 4.0.0-dev.4
+* [Android] Reschedule alarms after device reboot.
+
+## 4.0.0-dev.3
+**💥 Breaking Changes**
+* Refactored `AlarmSettings` model.
+* Ignore oncoming alarm if another alarm is ringing.
+* [Android] Add customizable notification icon.
+* [Android] Update kotlin version to `1.8.0`.
+
+## 4.0.0-dev.2
+* [Android] Fix native GSON parsing error.
+* Update `flutter_fgbg` dependency.
+
+## 4.0.0-dev.1
+* Add notification action stop button.
+
+## 3.1.7
+* [Android] Update kotlin version to `1.7.10`.
+
+## 3.1.6
+* Update `flutter_fgbg` dependency to `0.6.0`.
+* Update `shared_preferences` dependency to `2.3.2`.
+
 ## 3.1.5
 * [Android] Fix volume/focus post-alarm.
 * Export `AlarmSettings` class in `Alarm` class.
